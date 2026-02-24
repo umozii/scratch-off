@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SDGs 刮刮樂：預算控管小遊戲</title>
+  <style>
+    body{
+      font-family: system-ui, -apple-system, "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+      background:#f6f7fb;
+      margin:0;
+      padding:20px;
+      color:#111;
+    }
+    .wrap{max-width:900px;margin:0 auto;}
+    h1{margin:0 0 10px 0;font-size:22px;}
+    .sub{color:#444;margin-bottom:14px;line-height:1.6;}
+    .panel{
+      background:#fff;border:1px solid #e6e6ee;border-radius:14px;
+      padding:14px;box-shadow:0 6px 20px rgba(0,0,0,.06);
+      margin-bottom:14px;
+    }
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:end;}
+    .field{display:flex;flex-direction:column;gap:6px;}
+    label{font-size:13px;color:#333;}
+    input{
+      width:160px;padding:10px 10px;border:1px solid #d9d9e6;border-radius:10px;
+      font-size:14px;outline:none;
+    }
+    input:focus{border-color:#7a7af0;box-shadow:0 0 0 3px rgba(122,122,240,.15);}
+    button{
+      padding:10px 14px;border:none;border-radius:10px;
+      background:#111;color:#fff;font-size:14px;cursor:pointer;
+    }
+    button:disabled{opacity:.5;cursor:not-allowed;}
+    .btn2{background:#3a3a52;}
+    .grid{
+      display:grid;grid-template-columns:repeat(3,1fr);
+      gap:10px;max-width:420px;margin:10px auto 0 auto;
+    }
+    .cell{
+      height:110px;border-radius:14px;border:1px solid #e6e6ee;
+      display:flex;align-items:center;justify-content:center;
+      font-size:42px;user-select:none;
+      background:linear-gradient(180deg,#f2f3ff,#ffffff);
+      position:relative;
+    }
+    .covered{
+      background:repeating-linear-gradient(
+        45deg,
+        #c9c9d8 0px, #c9c9d8 10px,
+        #bdbdce 10px, #bdbdce 20px
+      );
+      color:transparent;
+    }
+    .covered::after{
+      content:"點我刮開";
+      position:absolute;inset:0;
+      display:flex;align-items:center;justify-content:center;
+      font-size:14px;color:#222;
+      text-shadow:0 1px 0 rgba(255,255,255,.6);
+    }
+    .stats{display:flex;flex-wrap:wrap;gap:10px;line-height:1.8;}
+    .tag{
+      padding:8px 10px;border-radius:999px;border:1px solid #e6e6ee;background:#fafaff;
+      font-size:13px;
+    }
+    .msg{
+      margin-top:10px;padding:10px;border-radius:12px;border:1px solid #e6e6ee;background:#fcfcff;
+      line-height:1.7;
+    }
+    .warn{border-color:#ffd2d2;background:#fff5f5;}
+    .ok{border-color:#cfe9d3;background:#f3fff5;}
+    .note{color:#555;font-size:13px;margin-top:8px;line-height:1.7;}
+    .center{text-align:center;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>SDGs 刮刮樂（點格子翻開版）</h1>
+    <div class="sub">主題：用「預算控管＋統計結果」提醒衝動消費（SDG 12 責任消費與生產）。每張刮刮樂有成本，刮越多越容易超出預算。</div>
+
+    <div class="panel">
+      <div class="row">
+        <div class="field">
+          <label>每張刮刮樂成本（元）</label>
+          <input id="cost" type="number" min="1" value="50">
+        </div>
+        <div class="field">
+          <label>今日預算（元）</label>
+          <input id="budget" type="number" min="1" value="200">
+        </div>
+        <div class="field">
+          <label>單張中獎獎金（元）</label>
+          <input id="prize" type="number" min="0" value="300">
+        </div>
+
+        <button id="newCardBtn">買一張並開始刮</button>
+        <button id="resetBtn" class="btn2">全部重置</button>
+      </div>
+      <div class="note">
+        規則：一張卡 3×3，共 9 格；<b>同一符號出現至少 3 個</b>就算中獎。<br>
+        提醒：達到或超過預算會鎖住「買新卡」，避免越刮越想刮。
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="center"><b>刮刮樂卡片</b></div>
+      <div id="grid" class="grid"></div>
+      <div id="cardStatus" class="msg">尚未購買卡片。請按「買一張並開始刮」。</div>
+    </div>
+
+    <div class="panel">
+      <div><b>統計結果</b></div>
+      <div class="stats" id="stats"></div>
+      <div id="sdgMsg" class="msg"></div>
+    </div>
+  </div>
+
+  <script>
+    var symbols = ["🍀","⭐","🍒","💎","🎁","🍋"];
+
+    var costEl = document.getElementById("cost");
+    var budgetEl = document.getElementById("budget");
+    var prizeEl = document.getElementById("prize");
+    var newCardBtn = document.getElementById("newCardBtn");
+    var resetBtn = document.getElementById("resetBtn");
+
+    var gridEl = document.getElementById("grid");
+    var cardStatusEl = document.getElementById("cardStatus");
+    var statsEl = document.getElementById("stats");
+    var sdgMsgEl = document.getElementById("sdgMsg");
+
+    var totalSpent = 0;
+    var totalCards = 0;
+    var totalWins = 0;
+    var totalPrize = 0;
+
+    var card = null; // {arr:[], opened:[], done:false, win:false, winSymbol:""}
+    var openedCount = 0;
+    var consecutiveNoWin = 0;
+
+    function n(x){
+      var v = Number(x);
+      if (v !== v) v = 0;
+      if (v < 0) v = 0;
+      return Math.floor(v);
+    }
+
+    function randSymbol(){
+      var i = Math.floor(Math.random() * symbols.length);
+      return symbols[i];
+    }
+
+    function buildCard(){
+      var a = [];
+      var i = 0;
+      while (i < 9){
+        a.push(randSymbol());
+        i += 1;
+      }
+      return a;
+    }
+
+    function renderGrid(){
+      gridEl.innerHTML = "";
+      if (!card){
+        return;
+      }
+
+      var i = 0;
+      while (i < 9){
+        var div = document.createElement("div");
+        div.className = "cell " + (card.opened[i] ? "" : "covered");
+        div.textContent = card.arr[i];
+
+        (function(idx, el){
+          el.addEventListener("click", function(){
+            openCell(idx);
+          });
+        })(i, div);
+
+        gridEl.appendChild(div);
+        i += 1;
+      }
+    }
+
+    function openCell(i){
+      if (!card) return;
+      if (card.done) return;
+      if (card.opened[i]) return;
+
+      card.opened[i] = true;
+      openedCount += 1;
+      renderGrid();
+
+      if (openedCount === 9){
+        finishCard();
+      }else{
+        updateCardStatus("已刮開 " + openedCount + "/9 格。");
+      }
+    }
+
+    function finishCard(){
+      card.done = true;
+
+      var cnt = [];
+      var i = 0;
+      while (i < symbols.length){
+        cnt.push(0);
+        i += 1;
+      }
+
+      i = 0;
+      while (i < 9){
+        var s = card.arr[i];
+        var j = 0;
+        while (j < symbols.length){
+          if (symbols[j] === s){
+            cnt[j] += 1;
+            break;
+          }
+          j += 1;
+        }
+        i += 1;
+      }
+
+      var win = false;
+      var winSym = "";
+      i = 0;
+      while (i < cnt.length){
+        if (cnt[i] >= 3){
+          win = true;
+          winSym = symbols[i];
+          break;
+        }
+        i += 1;
+      }
+
+      card.win = win;
+      card.winSymbol = winSym;
+
+      if (win){
+        totalWins += 1;
+        totalPrize += n(prizeEl.value);
+        consecutiveNoWin = 0;
+        updateCardStatus("結果：🎉 中獎！符號 " + winSym + " 至少出現 3 次。", true);
+      }else{
+        consecutiveNoWin += 1;
+        updateCardStatus("結果：未中獎。", false);
+      }
+
+      updateStats();
+      updateSdgMessage();
+      updateButtons();
+    }
+
+    function updateCardStatus(text, isWin){
+      cardStatusEl.textContent = text;
+
+      cardStatusEl.className = "msg";
+      if (isWin === true) cardStatusEl.className = "msg ok";
+      if (isWin === false) cardStatusEl.className = "msg warn";
+    }
+
+    function updateButtons(){
+      var cost = n(costEl.value);
+      var budget = n(budgetEl.value);
+
+      var canBuy = (totalSpent + cost) <= budget;
+      if (!cost || !budget) canBuy = false;
+
+      newCardBtn.disabled = !canBuy;
+
+      if (!canBuy){
+        if (budget > 0 && totalSpent >= budget){
+          newCardBtn.textContent = "已達預算，停止購買";
+        }else{
+          newCardBtn.textContent = "買一張並開始刮";
+        }
+      }else{
+        newCardBtn.textContent = "買一張並開始刮";
+      }
+    }
+
+    function updateStats(){
+      var net = totalPrize - totalSpent;
+      var rate = (totalCards === 0) ? 0 : Math.round((totalWins / totalCards) * 1000) / 10;
+
+      statsEl.innerHTML = ""
+        + "<div class='tag'>已買卡片：<b>" + totalCards + "</b> 張</div>"
+        + "<div class='tag'>總花費：<b>" + totalSpent + "</b> 元</div>"
+        + "<div class='tag'>中獎次數：<b>" + totalWins + "</b> 次</div>"
+        + "<div class='tag'>總獎金：<b>" + totalPrize + "</b> 元</div>"
+        + "<div class='tag'>淨損益：<b>" + net + "</b> 元</div>"
+        + "<div class='tag'>中獎率：<b>" + rate + "%</b></div>";
+    }
+
+    function updateSdgMessage(){
+      var budget = n(budgetEl.value);
+      var net = totalPrize - totalSpent;
+
+      var msg = "";
+      if (totalCards === 0){
+        msg = "你還沒開始刮。可以先設定「預算」再開始，養成消費前先規劃的習慣（SDG 12）。";
+        sdgMsgEl.className = "msg";
+        sdgMsgEl.textContent = msg;
+        return;
+      }
+
+      if (totalSpent >= budget){
+        msg = "你已達到今日預算。停止購買是負責任消費的一部分：先把必要支出與儲蓄放第一，避免衝動消費擴大。";
+        sdgMsgEl.className = "msg warn";
+        sdgMsgEl.textContent = msg;
+        return;
+      }
+
+      if (consecutiveNoWin >= 2){
+        msg = "你已連續未中獎 " + consecutiveNoWin + " 次。建議先停一下再決定要不要繼續，避免『越輸越想翻本』的衝動。";
+        sdgMsgEl.className = "msg warn";
+        sdgMsgEl.textContent = msg;
+        return;
+      }
+
+      if (net < 0){
+        msg = "目前淨損益為負。這個結果提醒：娛樂消費要設定上限，記錄花費能幫你做更負責任的選擇（SDG 12）。";
+        sdgMsgEl.className = "msg";
+        sdgMsgEl.textContent = msg;
+        return;
+      }
+
+      msg = "你目前還在預算內。維持規劃與節制，才是真正能長期做到的責任消費（SDG 12）。";
+      sdgMsgEl.className = "msg ok";
+      sdgMsgEl.textContent = msg;
+    }
+
+    function buyNewCard(){
+      var cost = n(costEl.value);
+      var budget = n(budgetEl.value);
+
+      if (!cost || !budget){
+        alert("請先填入每張成本與今日預算。");
+        return;
+      }
+
+      if ((totalSpent + cost) > budget){
+        updateButtons();
+        updateSdgMessage();
+        return;
+      }
+
+      totalSpent += cost;
+      totalCards += 1;
+
+      card = {
+        arr: buildCard(),
+        opened: [false,false,false,false,false,false,false,false,false],
+        done: false,
+        win: false,
+        winSymbol: ""
+      };
+      openedCount = 0;
+
+      renderGrid();
+      updateCardStatus("新卡片已購買：請點格子刮開（0/9）。");
+      updateStats();
+      updateSdgMessage();
+      updateButtons();
+    }
+
+    function resetAll(){
+      totalSpent = 0;
+      totalCards = 0;
+      totalWins = 0;
+      totalPrize = 0;
+      consecutiveNoWin = 0;
+
+      card = null;
+      openedCount = 0;
+
+      gridEl.innerHTML = "";
+      cardStatusEl.className = "msg";
+      cardStatusEl.textContent = "尚未購買卡片。請按「買一張並開始刮」。";
+
+      updateStats();
+      updateSdgMessage();
+      updateButtons();
+    }
+
+    newCardBtn.addEventListener("click", buyNewCard);
+    resetBtn.addEventListener("click", resetAll);
+
+    costEl.addEventListener("input", updateButtons);
+    budgetEl.addEventListener("input", updateButtons);
+    prizeEl.addEventListener("input", function(){
+      updateStats();
+      updateSdgMessage();
+    });
+
+    updateStats();
+    updateSdgMessage();
+    updateButtons();
+  </script>
+</body>
+</html>
